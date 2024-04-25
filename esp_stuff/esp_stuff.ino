@@ -19,6 +19,8 @@
 #include "Adafruit_Thermal.h"
 #include <HardwareSerial.h>
 #include "Arduino.h"
+#include <HTTPClient.h>
+#include <WiFi.h>
 
 #define RST_PIN 15          // Configurable, see typical pin layout above
 #define SS_PIN 5         // Configurable, see typical pin layout above
@@ -29,6 +31,16 @@ const byte txPin = 0;   // check datasheet of your board
 const byte dtrPin = 4;  // optional
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
+
+MFRC522::MIFARE_Key key;
+MFRC522::StatusCode status;
+
+int block = 4;
+int block2 = 5;
+char readblockIban1[18] = {0}; // Initialize with zeros and allow space for null termination
+char readblockIban2[18] = {0}; // Initialize with zeros and allow space for null termination
+
+byte buffer = 18;
 
 HardwareSerial mySerial(1);
 Adafruit_Thermal printer(&mySerial);
@@ -118,12 +130,12 @@ void bonprinter(String content){
 
 
 void setup() {
-	Serial.begin(115200);		// Initialize serial communications with the PC
+	Serial.begin(9600);		// Initialize serial communications with the PC
 
 	SPI.begin();			// Init SPI bus
 
 	mfrc522.PCD_Init();		// Init MFRC522
-	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
+	//mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
 
   micros();
   mySerial.begin(printerBaudrate, SERIAL_8N1, rxPin, txPin);  // must be 8N1 mode
@@ -133,6 +145,9 @@ void setup() {
 }
 
 void loop() {
+
+  for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
+
 	// Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
 	if (!mfrc522.PICC_IsNewCardPresent()) {
 		return;
@@ -143,16 +158,21 @@ void loop() {
 		return;
 	}
 
+  Serial.setTimeout(20000L);
+
   String content = "";
-  String letter;
+
   Serial.print("UID info: ");
-	for (byte i = 0; i < mfrc522.uid.size; i++) 
-  {
+	for (byte i = 0; i < mfrc522.uid.size; i++) {
     Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
     Serial.print(mfrc522.uid.uidByte[i], HEX);
     content.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " "));
     content.concat(String(mfrc522.uid.uidByte[i], HEX));
   }
+
+  ReadDataFromBlock(block, readblockIban1);
+  ReadDataFromBlock(block2, readblockIban2);
+  
 
   if (content.equalsIgnoreCase(" AE 0D 07 02")) {
     Serial.println();
@@ -173,6 +193,7 @@ void loop() {
     if (code == "1234") {
       Serial.println("\nWelkom team 6");
       bonprinter(content);
+      sendRequestToAPI(readblockIban1, code, content); // Stuur IBAN, pincode en pasnummer naar de API
       code = "";
     } else {
       Serial.println("\nFoute invoer.");
@@ -183,4 +204,66 @@ void loop() {
   }
 
   delay(3000);
+}
+
+void ReadDataFromBlock(int block, char readBlockData[]) {
+  /* Authenticating the desired data block for Read access using Key A */
+  status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &key, &(mfrc522.uid));
+  if (status != MFRC522::STATUS_OK)
+  {
+    Serial.print("Authentication failed for Read: ");
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    return;
+  }
+  else
+  {
+    Serial.println("Authentication success");
+  }
+
+  /* Reading data from the Block */
+  status = mfrc522.MIFARE_Read(block, (byte *)readBlockData, &buffer);
+  if (status != MFRC522::STATUS_OK)
+  {
+    Serial.print("Reading from Block failed: ");
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    return;
+  }
+  else
+  {
+    Serial.println("Block was read successfully");
+  }
+
+  // Ensure null termination
+  readBlockData[16] = '\0';
+}
+
+void sendRequestToAPI(char* iban, String pincode, String pasnummer) {
+    HTTPClient http;
+
+    // De URL van de API waar je het verzoek naartoe stuurt
+    String apiUrl = "http://145.24.223.83:8080/api/withdraw"; // Vervang <IP_ADRES> door het werkelijke IP-adres van je API-server
+
+    // Maak een JSON-payload met de IBAN, pincode en pasnummer
+    String payload = "{\"iban\":\"" + String(iban) + "\",\"pincode\":\"" + pincode + "\",\"pasnummer\":\"" + pasnummer + "\"}";
+
+    // Begin met het configureren van de HTTP-client
+    http.begin(apiUrl);
+    http.addHeader("Content-Type", "application/json");
+
+    // Voer het POST-verzoek uit met de JSON-payload
+    int httpResponseCode = http.POST(payload);
+
+    // Controleer of het verzoek succesvol was
+    if (httpResponseCode > 0) {
+        Serial.print("HTTP Response code: ");
+        Serial.println(httpResponseCode);
+        String response = http.getString();
+        Serial.println(response);
+    } else {
+        Serial.print("HTTP Request failed with error code: ");
+        Serial.println(httpResponseCode);
+    }
+
+    // Beëindig het HTTP-verzoek
+    http.end();
 }
