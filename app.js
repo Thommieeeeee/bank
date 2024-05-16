@@ -39,7 +39,7 @@ app.post('/api/withdraw', cors(), (req, res) => {
     const token = req.header('NOOB-TOKEN');
 
     // Controleer of alle parameters zijn meegegeven
-    if (iban && pincode && uid && amount && token) {
+    if (target && pincode && uid && amount && token) {
         res.status(200).json({ amount }); // Retourneer het opnamebedrag
     } else {
         res.status(400).json({ error: "Ontbrekende parameters" }); // Stuur een status 400 als er parameters ontbreken
