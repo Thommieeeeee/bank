@@ -21,6 +21,7 @@
 #include "Arduino.h"
 #include <HTTPClient.h>
 #include <WiFi.h>
+#include <ArduinoJson.h>
 
 #define RST_PIN 15  // Configurable, see typical pin layout above
 #define SS_PIN 5    // Configurable, see typical pin layout above
@@ -41,6 +42,8 @@ char readblockIban1[18] = { 0 };  // Initialize with zeros and allow space for n
 char readblockIban2[18] = { 0 };  // Initialize with zeros and allow space for null termination
 
 byte buffer = 18;
+
+String noobToken = "f022be6b-e8ba-4470-83d0-3269534f3b8b";
 
 HardwareSerial mySerial(1);
 Adafruit_Thermal printer(&mySerial);
@@ -163,65 +166,85 @@ void setup() {
 }
 
 void loop() {
+  while(1){
+    for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
 
-  for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
+    // Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
+    if (!mfrc522.PICC_IsNewCardPresent()) {
+      //Serial.println("Geen kaart");
+      return;
+    }
 
-  // Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
-  if (!mfrc522.PICC_IsNewCardPresent()) {
-    return;
-  }
+    // Select one of the cards
+    if (!mfrc522.PICC_ReadCardSerial()) {
+      return;
+    }
 
-  // Select one of the cards
-  if (!mfrc522.PICC_ReadCardSerial()) {
-    return;
-  }
+    Serial.setTimeout(20000L);
 
-  Serial.setTimeout(20000L);
+    String content = "";
 
-  String content = "";
+    Serial.println("Wel kaart");
+    Serial.print("UID info: ");
+    for (byte i = 0; i < mfrc522.uid.size; i++) {
+      Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
+      Serial.print(mfrc522.uid.uidByte[i], HEX);
+      content.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " "));
+      content.concat(String(mfrc522.uid.uidByte[i], HEX));
+    }
 
-  Serial.print("UID info: ");
-  for (byte i = 0; i < mfrc522.uid.size; i++) {
-    Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
-    Serial.print(mfrc522.uid.uidByte[i], HEX);
-    content.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " "));
-    content.concat(String(mfrc522.uid.uidByte[i], HEX));
-  }
-
-  ReadDataFromBlock(block, readblockIban1);
-  ReadDataFromBlock(block2, readblockIban2);
+    ReadDataFromBlock(block, readblockIban1);
+    ReadDataFromBlock(block2, readblockIban2);
 
 
-  if (content.equalsIgnoreCase(" AE 0D 07 02")) {
-    Serial.println();
-    Serial.println("Voer pincode in: ");
+    if (content.equalsIgnoreCase(" AE 0D 07 02")) {
+      Serial.println();
+      Serial.println("Voer pincode in: ");
 
-    char key;
+      char key;
 
-    //Blijf wachten totdat er een viercijferige code is ingevoerd
-    while (code.length() < 4) {
-      key = keypad.getKey();
-      if (key != NO_KEY && key >= '0' && key <= '9') {
-        code += key;
-        Serial.print(key);
+      //Blijf wachten totdat er een viercijferige code is ingevoerd
+      while (code.length() < 4) {
+        key = keypad.getKey();
+        if (key != NO_KEY && key >= '0' && key <= '9') {
+          code += key;
+          Serial.print(key);
+        }
       }
-    }
 
-    // Controleer of de ingevoerde code overeenkomt met de verwachte code
-    if (code == "1234") {
-      Serial.println("\nWelkom team 6");
-      bonprinter(content);
-      sendRequestToAPI(readblockIban1, code, content);  // Stuur IBAN, pincode en pasnummer naar de API
-      code = "";
+      // Controleer of de ingevoerde code overeenkomt met de verwachte code
+      if (code == "1234") {
+        Serial.println("\nWelkom team 6");
+        //bonprinter(content);
+        sendInfoRequestToAPI(readblockIban1, code, content, noobToken);  // Stuur IBAN, pincode en pasnummer naar de API
+        code = "";
+        Serial.println("Wil je geld opnemen? Druk op 1 voor ja en op 2 voor nee");
+        while (code.length() < 1) {
+          key = keypad.getKey();
+          if (key != NO_KEY && key >= '0' && key <= '9') {
+            code += key;
+            Serial.print(key);
+          }
+        }
+
+        if (code == "1") {
+          withdrawFromAccount(readblockIban1, code, content, 10, noobToken);
+        } else if (code == "2") {
+          Serial.println("Oke");
+        } else {
+          Serial.println("Verkeerde input");
+        }
+      } else {
+        Serial.println("\nFoute invoer.");
+        code = "";
+      }
     } else {
-      Serial.println("\nFoute invoer.");
-      code = "";
+      Serial.println("\nAccess denied");
     }
-  } else {
-    Serial.println("\nAccess denied");
-  }
 
-  delay(3000);
+    delay(3000);
+    Serial.println("Test");
+  }
 }
 
 void ReadDataFromBlock(int block, char readBlockData[]) {
@@ -249,28 +272,78 @@ void ReadDataFromBlock(int block, char readBlockData[]) {
   readBlockData[16] = '\0';
 }
 
-void sendRequestToAPI(char* iban, String pincode, String pasnummer) {
+void sendInfoRequestToAPI(char* iban, String pincode, String pasnummer, String token) {
   HTTPClient http;
 
   // De URL van de API waar je het verzoek naartoe stuurt
-  String apiUrl = "http://145.24.223.83:8080/api/withdraw";  // Vervang <IP_ADRES> door het werkelijke IP-adres van je API-server
+  String apiUrl = "http://145.24.223.83:8080/api/accountinfo?target=" + String(iban);  // Vervang <IP_ADRES> door het werkelijke IP-adres van je API-server
 
   // Maak een JSON-payload met de IBAN, pincode en pasnummer
-  String payload = "{\"iban\":\"" + String(iban) + "\",\"pincode\":\"" + pincode + "\",\"pasnummer\":\"" + pasnummer + "\"}";
+  String payload = "{\"pincode\":\"" + pincode + "\",\"uid\":\"" + pasnummer + "\"}";
 
   // Begin met het configureren van de HTTP-client
   http.begin(apiUrl);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("NOOB-TOKEN", token);
 
   // Voer het POST-verzoek uit met de JSON-payload
   int httpResponseCode = http.POST(payload);
 
   // Controleer of het verzoek succesvol was
-  if (httpResponseCode > 0) {
+  if (httpResponseCode == 200) {
+    // Parse de ontvangen JSON-response
+    DynamicJsonDocument doc(1024);
+    deserializeJson(doc, http.getString());
+
+    // Haal de gegevens uit de JSON-response
+    String firstName = doc["first_name"].as<String>();
+    String lastName = doc["last_name"].as<String>();
+    float balance = doc["balance"].as<float>();
+
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
-    String response = http.getString();
-    Serial.println(response);
+
+    // Toon de ontvangen gegevens
+    Serial.print("Voornaam: ");
+    Serial.println(firstName);
+    Serial.print("Achternaam: ");
+    Serial.println(lastName);
+    Serial.print("Saldo: ");
+    Serial.println(balance);
+  } else {
+    Serial.print("HTTP Request failed with error code: ");
+    Serial.println(httpResponseCode);
+  }
+
+  // Beëindig het HTTP-verzoek
+  http.end();
+}
+
+void withdrawFromAccount(char* iban, String pasnummer, String pincode, float amount, String token) {
+  HTTPClient http;
+
+  // De URL van de API waar je het verzoek naartoe stuurt
+  String apiUrl = "http://145.24.223.83:8080/api/accountinfo?target=" + String(iban);
+
+  // Maak een JSON-payload met de pincode, het opnamebedrag en het UID
+  String payload = "{\"pincode\":\"" + pincode + ",\"uid\":\"" + pasnummer + "\",\"amount\":" + String(amount) + "\"}";
+
+  // Begin met het configureren van de HTTP-client
+  http.begin(apiUrl);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("NOOB-TOKEN", token);
+
+  // Voer het POST-verzoek uit met de JSON-payload
+  int httpResponseCode = http.POST(payload);
+
+  // Controleer of het verzoek succesvol was
+  if (httpResponseCode == 200) {
+    // Parse de ontvangen JSON-response
+    DynamicJsonDocument doc(1024);
+    deserializeJson(doc, http.getString());
+
+    Serial.print("HTTP Response code: ");
+    Serial.println(httpResponseCode);
   } else {
     Serial.print("HTTP Request failed with error code: ");
     Serial.println(httpResponseCode);
