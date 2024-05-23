@@ -22,6 +22,7 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include <Stepper.h>
 
 #define RST_PIN 15  // Configurable, see typical pin layout above
 #define SS_PIN 5    // Configurable, see typical pin layout above
@@ -133,8 +134,8 @@ void bonprinter(String content) {
 
 void initWifi() {
   WiFi.mode(WIFI_STA);
-  //WiFi.begin("tesla iot", "fsL6HgjN");
-  WiFi.begin("FRITZ!Box gast", "martine20101977");
+  WiFi.begin("tesla iot", "fsL6HgjN");
+  //WiFi.begin("FRITZ!Box gast", "martine20101977");
   Serial.println("\nConnecting");
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -306,18 +307,15 @@ void sendInfoRequestToAPI(String iban, String pincode, String pasnummer, String 
     deserializeJson(doc, http.getString());
 
     // Haal de gegevens uit de JSON-response
-    String firstName = doc["first_name"].as<String>();
-    String lastName = doc["last_name"].as<String>();
+    String name = doc["name"].as<String>();
     float balance = doc["balance"].as<float>();
 
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
 
     // Toon de ontvangen gegevens
-    Serial.print("Voornaam: ");
-    Serial.println(firstName);
-    Serial.print("Achternaam: ");
-    Serial.println(lastName);
+    Serial.print("Naam: ");
+    Serial.println(name);
     Serial.print("Saldo: ");
     Serial.println(balance);
   } else {
@@ -336,7 +334,7 @@ void withdrawFromAccount(String iban, String pincode, String pasnummer, int amou
   String apiUrl = "http://145.24.223.83:8080/api/accountinfo?target=" + iban;
 
   // Maak een JSON-payload met de IBAN, pincode en pasnummer
-  String payload = "{\"pincode\":\"" + pincode + "\",\"uid\":\"" + pasnummer + "\",\"amount\":\"" + String(amount) + "\"}";  //"\",\"amount\":" + String(amount) + 
+  String payload = "{\"pincode\":\"" + pincode + "\",\"uid\":\"" + pasnummer + "\",\"amount\":\"" + String(amount) + "\"}";
 
   // Begin met het configureren van de HTTP-client
   http.begin(apiUrl);
@@ -359,6 +357,8 @@ void withdrawFromAccount(String iban, String pincode, String pasnummer, int amou
 
     Serial.print("Bedrag: ");
     Serial.println(amount);
+    int printAmount = 10;
+    //dispenseMoney(printAmount);
   } else {
     Serial.print("HTTP Request failed with error code: ");
     Serial.println(httpResponseCode);
@@ -367,3 +367,24 @@ void withdrawFromAccount(String iban, String pincode, String pasnummer, int amou
   // Beëindig het HTTP-verzoek
   http.end();
 }
+
+// void dispenseMoney(int amount) {
+//   int bills[2] = {20, 5};
+//   int num_bills = sizeof(bills) / sizeof(int);
+
+//   for (int i = 0; i < num_bills; i++) {
+//     int bill = bills[i];
+//     int num_steps = amount / bill;
+//     amount %= bill;
+
+//     for (int j = 0; j < num_steps; j++) {
+//       if (bill == 5) {
+//         stepper5.step(stepsPerRevolution);
+//         delay(100);
+//       } else if (bill == 20) {
+//         stepper20.step(stepsPerRevolution);
+//         delay(100);
+//       }
+//     }
+//   }
+// }
