@@ -16,8 +16,8 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Keypad.h>
-#include "Adafruit_Thermal.h"
-#include <HardwareSerial.h>
+#include "Adafruit_Thermal.h" 
+#include "SoftwareSerial.h"
 #include "Arduino.h"
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -27,10 +27,11 @@
 #define RST_PIN 15  // Configurable, see typical pin layout above
 #define SS_PIN 5    // Configurable, see typical pin layout above
 
-const int printerBaudrate = 9600;  // or 19200 usually
-const byte rxPin = 2;              // check datasheet of your board
-const byte txPin = 0;              // check datasheet of your board
-const byte dtrPin = 4;             // optional
+#define TX_PIN 16 // Arduino transmit  YELLOW WIRE  labeled RX on printer
+#define RX_PIN 17 // Arduino receive   GREEN WIRE   labeled TX on printer
+
+SoftwareSerial mySerial(RX_PIN, TX_PIN); // Declare SoftwareSerial obj first
+Adafruit_Thermal printer(&mySerial);
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
 
@@ -45,9 +46,6 @@ char readblockIban2[18] = { 0 };  // Initialize with zeros and allow space for n
 byte buffer = 18;
 
 String noobToken = "f022be6b-e8ba-4470-83d0-3269534f3b8b";
-
-HardwareSerial mySerial(1);
-Adafruit_Thermal printer(&mySerial);
 
 #define ROW_NUM 4     // four rows
 #define COLUMN_NUM 4  // four columns
@@ -66,7 +64,17 @@ Keypad keypad = Keypad(makeKeymap(keys), pin_rows, pin_column, ROW_NUM, COLUMN_N
 
 String code = "";  // Initialize code
 
-void bonprinter(String content) {
+struct AccountInfo {
+  String name;
+  float balance;
+};
+
+struct Withdraw {
+  float amount;
+};
+
+void bonprinter(String content, float amount) {
+  printer.setTimes(100, 5);
   printer.justify('C');
   printer.setSize('L');
   printer.println("    BANK OF    ");
@@ -81,22 +89,18 @@ void bonprinter(String content) {
   printer.justify('R');
   printer.println("Automaat 6");
   printer.justify('L');
-  printer.boldOn();
   printer.setSize('L');
   printer.println("----------------");
   printer.setSize('S');
-  printer.boldOff();
   printer.feed(1);
 
   printer.println("Opgenomen bedrag");
   printer.justify('R');
-  printer.println("15.00");
+  printer.println(amount);
   printer.justify('L');
-  printer.boldOn();
   printer.setSize('L');
   printer.println("----------------");
   printer.setSize('S');
-  printer.boldOff();
   printer.feed(1);
 
   printer.println("IBAN");
@@ -115,21 +119,19 @@ void bonprinter(String content) {
   printer.justify('R');
   printer.println(content);
   printer.justify('L');
-  printer.boldOn();
   printer.setSize('L');
   printer.println("----------------");
   printer.setSize('S');
-  printer.boldOff();
   printer.feed(2);
 
   printer.justify('C');
   printer.println("tijd");
   printer.feed(5);
 
-  //printer.sleep();      // Tell printer to sleep
-  delay(3000L);  // Sleep for 3 seconds
-  // printer.wake();       // MUST wake() before printing again, even if reset
-  // printer.setDefault();
+  printer.sleep();      // Tell printer to sleep
+  delay(3000L);         // Sleep for 3 seconds
+  printer.wake();       // MUST wake() before printing again, even if reset
+  printer.setDefault();
 }
 
 void initWifi() {
@@ -159,14 +161,12 @@ void setup() {
 
   mfrc522.PCD_Init();  // Init MFRC522
   //mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
-
-  micros();
-  mySerial.begin(printerBaudrate, SERIAL_8N1, rxPin, txPin);  // must be 8N1 mode
+  
+  pinMode(4, OUTPUT); digitalWrite(4, LOW);
+  mySerial.begin(9600);
+  printer.begin();
 
   Serial.println("Houdt uw pas tegen de lezer.");
-
-  //  printer.enableDtr(dtrPin, LOW); // optional
-  //printer.begin();
 }
 
 void loop() {
@@ -198,57 +198,53 @@ void loop() {
     Serial.println();
 
     ReadDataFromBlock(block, readblockIban1);
+    Serial.println(block);
+    Serial.println(readblockIban1);
     ReadDataFromBlock(block2, readblockIban2);
+    Serial.println(block2);
+    Serial.println(readblockIban2);
 
     String iban = String(readblockIban1) + String(readblockIban2);
 
-    if (content.equalsIgnoreCase(" AE 0D 07 02")) {
-      Serial.println();
-      Serial.println("Voer pincode in: ");
+    Serial.println();
+    Serial.println("Voer pincode in: ");
 
-      char key;
+    char key;
 
-      //Blijf wachten totdat er een viercijferige code is ingevoerd
-      while (code.length() < 4) {
-        key = keypad.getKey();
-        if (key != NO_KEY && key >= '0' && key <= '9') {
-          code += key;
-          Serial.print(key);
-        }
+    //Blijf wachten totdat er een viercijferige code is ingevoerd
+    while (code.length() < 4) {
+      key = keypad.getKey();
+      if (key != NO_KEY && key >= '0' && key <= '9') {
+        code += key;
+        Serial.print(key);
       }
-
-      // Controleer of de ingevoerde code overeenkomt met de verwachte code
-      if (code == "1234") {
-        Serial.println("\nWelkom team 6");
-        //bonprinter(content);
-        sendInfoRequestToAPI(iban, code, content, noobToken);  // Stuur IBAN, pincode en pasnummer naar de API
-        code = "";
-        Serial.println("Wil je geld opnemen? Druk op 1 voor ja en op 2 voor nee");
-        while (code.length() < 1) {
-          key = keypad.getKey();
-          if (key != NO_KEY && key >= '0' && key <= '9') {
-            code += key;
-            Serial.print(key);
-          }
-        }
-
-        if (code == "1") {
-          int amount = 10;
-          Serial.println();
-          withdrawFromAccount(iban, code, content, amount, noobToken);
-        } else if (code == "2") {
-          Serial.println("\nOke");
-        } else {
-          Serial.println("\nVerkeerde input");
-        }
-        code = "";
-      } else {
-        Serial.println("\nFoute invoer.");
-        code = "";
-      }
-    } else {
-      Serial.println("\nAccess denied");
     }
+
+    AccountInfo accountInfo = sendInfoRequestToAPI(iban, code, content, noobToken);  // Stuur IBAN, pincode en pasnummer naar de API
+
+    //loginToServer(iban, code, noobToken);
+
+    code = "";
+    Serial.println("Wil je geld opnemen? Druk op 1 voor ja en op 2 voor nee");
+    while (code.length() < 1) {
+      key = keypad.getKey();
+      if (key != NO_KEY && key >= '0' && key <= '9') {
+        code += key;
+        Serial.print(key);
+      }
+    }
+
+    if (code == "1") {
+      int amount = 10;
+      Serial.println();
+      Withdraw withdraw = withdrawFromAccount(iban, code, content, amount, noobToken);
+      bonprinter(content, withdraw.amount);
+    } else if (code == "2") {
+      Serial.println("\nOke");
+    } else {
+      Serial.println("\nVerkeerde input");
+    }
+    code = "";
 
     delay(3000);
     Serial.println("Houdt uw pas tegen de lezer.");
@@ -283,8 +279,9 @@ void ReadDataFromBlock(int block, char readBlockData[]) {
   readBlockData[16] = '\0';
 }
 
-void sendInfoRequestToAPI(String iban, String pincode, String pasnummer, String token) {
+AccountInfo sendInfoRequestToAPI(String iban, String pincode, String pasnummer, String token) {
   HTTPClient http;
+  AccountInfo accountInfo;
 
   // De URL van de API waar je het verzoek naartoe stuurt
   String apiUrl = "http://145.24.223.83:8080/api/accountinfo?target=" + iban;
@@ -307,17 +304,17 @@ void sendInfoRequestToAPI(String iban, String pincode, String pasnummer, String 
     deserializeJson(doc, http.getString());
 
     // Haal de gegevens uit de JSON-response
-    String name = doc["name"].as<String>();
-    float balance = doc["balance"].as<float>();
+    accountInfo.name = doc["name"].as<String>();
+    accountInfo.balance = doc["balance"].as<float>();
 
-    Serial.print("HTTP Response code: ");
+    Serial.println("HTTP Response code: ");
     Serial.println(httpResponseCode);
 
     // Toon de ontvangen gegevens
     Serial.print("Naam: ");
-    Serial.println(name);
+    Serial.println(accountInfo.name);
     Serial.print("Saldo: ");
-    Serial.println(balance);
+    Serial.println(accountInfo.balance);
   } else {
     Serial.print("HTTP Request failed with error code: ");
     Serial.println(httpResponseCode);
@@ -325,13 +322,15 @@ void sendInfoRequestToAPI(String iban, String pincode, String pasnummer, String 
 
   // Beëindig het HTTP-verzoek
   http.end();
+  return accountInfo;
 }
 
-void withdrawFromAccount(String iban, String pincode, String pasnummer, int amount, String token) {
+Withdraw withdrawFromAccount(String iban, String pincode, String pasnummer, int amount, String token) {
   HTTPClient http;
+  Withdraw withdraw;
 
   // De URL van de API waar je het verzoek naartoe stuurt
-  String apiUrl = "http://145.24.223.83:8080/api/accountinfo?target=" + iban;
+  String apiUrl = "http://145.24.223.83:8080/api/withdraw?target=" + iban;
 
   // Maak een JSON-payload met de IBAN, pincode en pasnummer
   String payload = "{\"pincode\":\"" + pincode + "\",\"uid\":\"" + pasnummer + "\",\"amount\":\"" + String(amount) + "\"}";
@@ -350,21 +349,50 @@ void withdrawFromAccount(String iban, String pincode, String pasnummer, int amou
     DynamicJsonDocument doc(1024);
     deserializeJson(doc, http.getString());
 
-    float amount = doc["amount"].as<float>();  
+    withdraw.amount = doc["amount"].as<float>();  
 
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
 
     Serial.print("Bedrag: ");
-    Serial.println(amount);
-    int printAmount = 10;
-    //dispenseMoney(printAmount);
+    Serial.println(withdraw.amount);
   } else {
     Serial.print("HTTP Request failed with error code: ");
     Serial.println(httpResponseCode);
   }
 
   // Beëindig het HTTP-verzoek
+  http.end();
+
+  return withdraw;
+}
+
+void loginToServer(String clientId, String pin, String token) {
+  HTTPClient http;
+
+  // De URL van de API waar je het verzoek naartoe stuurt
+  String apiUrl = "http://bankofvenezuela/client_id_page.html";
+
+  // Maak een JSON-payload met de IBAN, pincode en pasnummer
+  String payload = "{\"client_id\":\"" + clientId + "\",\"pin\":\"" + pin + "\"}";
+
+  // Begin met het configureren van de HTTP-client
+  http.begin(apiUrl);
+  http.addHeader("Content-Type", "application/json");
+
+  // Voer het POST-verzoek uit met de JSON-payload
+  int httpResponseCode = http.POST(payload);
+
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.println(httpResponseCode);
+    Serial.println(response);
+  } else {
+    Serial.print("Error on sending POST: ");
+    Serial.println(httpResponseCode);
+  }
+
+  // Free resources
   http.end();
 }
 
