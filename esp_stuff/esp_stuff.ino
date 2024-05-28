@@ -42,8 +42,11 @@ int block = 4;
 int block2 = 5;
 char readblockIban1[18] = { 0 };  // Initialize with zeros and allow space for null termination
 char readblockIban2[18] = { 0 };  // Initialize with zeros and allow space for null termination
+char maskedblockIban2[18] = { 0 };  // Initialize with zeros and allow space for null termination
 
 byte buffer = 18;
+
+int transactionTimes = 0;
 
 String noobToken = "f022be6b-e8ba-4470-83d0-3269534f3b8b";
 
@@ -73,7 +76,7 @@ struct Withdraw {
   float amount;
 };
 
-void bonprinter(String content, float amount) {
+void bonprinter(String content, float amount, String iban, int transactionTime, String time) {
   printer.setTimes(100, 5);
   printer.justify('C');
   printer.setSize('L');
@@ -105,13 +108,13 @@ void bonprinter(String content, float amount) {
 
   printer.println("IBAN");
   printer.justify('R');
-  printer.println("NL06 INGB ********14");
+  printer.println(iban);
   printer.feed(1);
 
   printer.justify('L');
   printer.println("Transactienummer");
   printer.justify('R');
-  printer.println("1");
+  printer.println(transactionTime);
   printer.feed(1);
 
   printer.justify('L');
@@ -125,7 +128,7 @@ void bonprinter(String content, float amount) {
   printer.feed(2);
 
   printer.justify('C');
-  printer.println("tijd");
+  printer.println(time);
   printer.feed(5);
 
   printer.sleep();      // Tell printer to sleep
@@ -197,14 +200,18 @@ void loop() {
 
     Serial.println();
 
-    ReadDataFromBlock(block, readblockIban1);
+    readDataFromBlock1(block, readblockIban1);
     Serial.println(block);
     Serial.println(readblockIban1);
-    ReadDataFromBlock(block2, readblockIban2);
+    maskedDataFromBlock2(block2, maskedblockIban2);
     Serial.println(block2);
+    Serial.println(maskedblockIban2);
+
+    readDataFromBlock2(block2, readblockIban2);
     Serial.println(readblockIban2);
 
     String iban = String(readblockIban1) + String(readblockIban2);
+    String maskedIban = String(readblockIban1) + String(maskedblockIban2);
 
     Serial.println();
     Serial.println("Voer pincode in: ");
@@ -219,6 +226,8 @@ void loop() {
         Serial.print(key);
       }
     }
+
+    Serial.println();
 
     AccountInfo accountInfo = sendInfoRequestToAPI(iban, code, content, noobToken);  // Stuur IBAN, pincode en pasnummer naar de API
 
@@ -238,7 +247,8 @@ void loop() {
       int amount = 10;
       Serial.println();
       Withdraw withdraw = withdrawFromAccount(iban, code, content, amount, noobToken);
-      bonprinter(content, withdraw.amount);
+      transactionTimes++;
+      bonprinter(content, withdraw.amount, maskedIban, transactionTimes, getCurrentTimeFromServer());
     } else if (code == "2") {
       Serial.println("\nOke");
     } else {
@@ -254,7 +264,7 @@ void loop() {
   }
 }
 
-void ReadDataFromBlock(int block, char readBlockData[]) {
+void readDataFromBlock1(int block, char readBlockData[]) {
   /* Authenticating the desired data block for Read access using Key A */
   status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &key, &(mfrc522.uid));
   if (status != MFRC522::STATUS_OK) {
@@ -277,6 +287,64 @@ void ReadDataFromBlock(int block, char readBlockData[]) {
 
   // Ensure null termination
   readBlockData[16] = '\0';
+}
+
+void readDataFromBlock2(int block, char readBlockData[]) {
+  /* Authenticating the desired data block for Read access using Key A */
+  status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &key, &(mfrc522.uid));
+  if (status != MFRC522::STATUS_OK) {
+    Serial.print("Authentication failed for Read: ");
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    return;
+  } else {
+    Serial.println("Authentication success");
+  }
+
+  /* Reading data from the Block */
+  status = mfrc522.MIFARE_Read(block, (byte*)readBlockData, &buffer);
+  if (status != MFRC522::STATUS_OK) {
+    Serial.print("Reading from Block failed: ");
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    return;
+  } else {
+    Serial.println("Block was read successfully");
+  }
+
+  // Ensure null termination
+  readBlockData[16] = '\0';
+}
+
+void maskedDataFromBlock2(int block, char readBlockData[]) {
+  // Authenticating the desired data block for Read access using Key A
+  status = mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &key, &(mfrc522.uid));
+  if (status != MFRC522::STATUS_OK) {
+    Serial.print("Authentication failed for Read: ");
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    return;
+  } else {
+    Serial.println("Authentication success");
+  }
+
+  // Reading data from the Block
+  byte buffer[18];  // Buffer to hold block data, 16 bytes data + 2 bytes CRC
+  byte size = sizeof(buffer);
+  status = mfrc522.MIFARE_Read(block, buffer, &size);
+  if (status != MFRC522::STATUS_OK) {
+    Serial.print("Reading from Block failed: ");
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    return;
+  } else {
+    Serial.println("Block was read successfully");
+  }
+
+  // Ensure null termination
+  memcpy(readBlockData, buffer, 10);
+  readBlockData[10] = '\0';
+
+  // Mask all but the last two characters with asterisks
+  for (int i = 0; i < 8; i++) {
+    readBlockData[i] = '*';
+  }
 }
 
 AccountInfo sendInfoRequestToAPI(String iban, String pincode, String pasnummer, String token) {
@@ -365,6 +433,76 @@ Withdraw withdrawFromAccount(String iban, String pincode, String pasnummer, int 
   http.end();
 
   return withdraw;
+}
+
+String getCurrentTimeFromServer() {
+  HTTPClient http;
+  String currentTime = "";
+
+  // De URL van de API waar je het verzoek naartoe stuurt
+  String apiUrl = "http://145.24.223.83:8080/api/time";
+
+  // Begin met het configureren van de HTTP-client
+  http.begin(apiUrl);
+  http.addHeader("NOOB-TOKEN", noobToken);
+
+  // Voer het GET-verzoek uit
+  int httpResponseCode = http.GET();
+
+  // Controleer of het verzoek succesvol was
+  if (httpResponseCode == 200) {
+    // Parse de ontvangen JSON-response
+    DynamicJsonDocument doc(1024);
+    deserializeJson(doc, http.getString());
+
+    currentTime = doc["currentTime"].as<String>();
+
+    currentTime = adjustTime(currentTime, 7200);
+
+    Serial.println("HTTP Response code: ");
+    Serial.println(httpResponseCode);
+
+    // Toon de ontvangen tijd
+    Serial.print("Huidige tijd: ");
+    Serial.println(currentTime);
+  } else {
+    Serial.print("HTTP Request failed with error code: ");
+    Serial.println(httpResponseCode);
+  }
+
+  // Beëindig het HTTP-verzoek
+  http.end();
+  return currentTime;
+}
+
+String adjustTime(String currentTime, long adjustment) {
+  // Parse de ontvangen tijd
+  int year = currentTime.substring(0, 4).toInt();
+  int month = currentTime.substring(5, 7).toInt();
+  int day = currentTime.substring(8, 10).toInt();
+  int hour = currentTime.substring(11, 13).toInt();
+  int minute = currentTime.substring(14, 16).toInt();
+  int second = currentTime.substring(17, 19).toInt();
+
+  // Voeg de aanpassing toe aan de tijd
+  // Houd er rekening mee dat dit eenvoudig is en niet omgaat met dagelijkse, maandelijkse of jaarlijkse overloop
+  // Dit is alleen een algemene aanpassing voor uren
+  hour += (adjustment / 3600);
+  if (hour >= 24) {
+    hour -= 24;
+    // Pas de datum ook aan indien nodig
+    // Dit moet echter afhangen van je specifieke behoeften en situatie
+  }
+
+  // Formatteer de tijd terug naar een string
+  String adjustedTime = String(year) + "-" + formatTimeElement(month) + "-" + formatTimeElement(day) + " " +
+                        formatTimeElement(hour) + ":" + formatTimeElement(minute) + ":" + formatTimeElement(second);
+  return adjustedTime;
+}
+
+String formatTimeElement(int element) {
+  // Voeg een voorloopnul toe als het element kleiner is dan 10
+  return (element < 10 ? "0" + String(element) : String(element));
 }
 
 void loginToServer(String clientId, String pin, String token) {
