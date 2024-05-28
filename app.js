@@ -56,7 +56,7 @@ function startServer() {
         if (target && pincode && uid && token) {
             // Als alle parameters aanwezig zijn, stuur een JSON-reactie met de gebruikersgegevens
             const query = 'SELECT name, balance FROM clients WHERE client_id = ? AND pincode = ?';
-            db.query(query, [101, 123456], (err, results) => {
+            db.query(query, [target, pincode], (err, results) => {
                 if (err) {
                     console.error(`Database query error: ${err.message}`);
                     res.status(500).json({ error: "Internal Server Error" });
@@ -83,6 +83,19 @@ function startServer() {
         } else {
             res.status(400).json({ error: "Ontbrekende parameters" }); // Stuur een status 400 als er parameters ontbreken
         }
+    });
+
+    app.get('/api/time', cors(), (req, res) => {
+        const query = 'SELECT DATE_FORMAT(NOW(), "%Y-%m-%d %H:%i:%s") as currentTime';
+        db.query(query, (err, results) => {
+            if (err) {
+                console.error(`Database query error: ${err.message}`);
+                res.status(500).json({ error: "Internal Server Error" });
+            } else {
+                const currentTime = results[0].currentTime;
+                res.status(200).json({ currentTime });
+            }
+        });
     });
 
     app.listen(port, "145.24.223.83", () => {
