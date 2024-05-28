@@ -48,12 +48,15 @@ function startServer() {
     });
 
     app.post('/api/accountinfo', cors(), (req, res) => {
+        console.log('help');
         const { target } = req.query;
         const { pincode, uid } = req.body;
         const token = req.header('NOOB-TOKEN');
-        
+
+        console.log(target, pincode, uid, token);
+
         // Controleren of alle parameters zijn meegegeven
-        if (target && pincode && uid && token) {
+        if (target.match(/^ZW\d{2}BANB\d{10}/)) {
             // Als alle parameters aanwezig zijn, stuur een JSON-reactie met de gebruikersgegevens
             const query = 'SELECT name, balance FROM clients WHERE client_id = ? AND pincode = ?';
             db.query(query, [target, pincode], (err, results) => {
@@ -68,7 +71,31 @@ function startServer() {
                 }
             });
         } else {
-            res.status(400).json({ error: "Ontbrekende parameters" }); // Stuur een status 400 als er parameters ontbreken
+            fetch("https://noob.datalabrotterdam.nl/api/noob/accountinfo" + '?target=' + target, {
+                method: "POST",
+                body: JSON.stringify(req.body),
+                headers: {
+                    "Content-type": "application/json; charset=UTF-8",
+                    "NOOB-TOKEN": "f022be6b-e8ba-4470-83d0-3269534f3b8b"
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    // Read the response body as json
+                    return response.json();
+                })
+                .then(data => {
+                    // Log the response body
+                    console.log(data);
+                    res.status(200).json(data);
+                })
+                .catch(error => {
+                    console.error('There was a problem with the fetch operation:', error);
+                });
+
+            //res.status(400).json({ error: "Ontbrekende parameters" }); // Stuur een status 400 als er parameters ontbreken
         }
     });
 
@@ -78,10 +105,32 @@ function startServer() {
         const token = req.header('NOOB-TOKEN');
 
         // Controleer of alle parameters zijn meegegeven
-        if (target && pincode && uid && amount && token) {
+        if (target.match(/^ZW\d{2}BANB\d{10}/)) {
             res.status(200).json({ amount }); // Retourneer het opnamebedrag
         } else {
-            res.status(400).json({ error: "Ontbrekende parameters" }); // Stuur een status 400 als er parameters ontbreken
+            fetch("https://noob.datalabrotterdam.nl/api/noob/accountinfo" + '?target=' + target, {
+                method: "POST",
+                body: JSON.stringify(req.body),
+                headers: {
+                    "Content-type": "application/json; charset=UTF-8",
+                    "NOOB-TOKEN": "f022be6b-e8ba-4470-83d0-3269534f3b8b"
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    // Read the response body as json
+                    return response.json();
+                })
+                .then(data => {
+                    // Log the response body
+                    console.log(data);
+                    res.status(200).json(data);
+                })
+                .catch(error => {
+                    console.error('There was a problem with the fetch operation:', error);
+                });
         }
     });
 
