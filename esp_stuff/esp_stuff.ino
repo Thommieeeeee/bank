@@ -16,7 +16,7 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Keypad.h>
-#include "Adafruit_Thermal.h" 
+#include "Adafruit_Thermal.h"
 #include "SoftwareSerial.h"
 #include "Arduino.h"
 #include <HTTPClient.h>
@@ -27,10 +27,10 @@
 #define RST_PIN 15  // Configurable, see typical pin layout above
 #define SS_PIN 5    // Configurable, see typical pin layout above
 
-#define TX_PIN 16 // Arduino transmit  YELLOW WIRE  labeled RX on printer
-#define RX_PIN 17 // Arduino receive   GREEN WIRE   labeled TX on printer
+#define TX_PIN 16  // Arduino transmit  YELLOW WIRE  labeled RX on printer
+#define RX_PIN 17  // Arduino receive   GREEN WIRE   labeled TX on printer
 
-SoftwareSerial mySerial(RX_PIN, TX_PIN); // Declare SoftwareSerial obj first
+SoftwareSerial mySerial(RX_PIN, TX_PIN);  // Declare SoftwareSerial obj first
 Adafruit_Thermal printer(&mySerial);
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
@@ -40,8 +40,8 @@ MFRC522::StatusCode status;
 
 int block = 4;
 int block2 = 5;
-char readblockIban1[18] = { 0 };  // Initialize with zeros and allow space for null termination
-char readblockIban2[18] = { 0 };  // Initialize with zeros and allow space for null termination
+char readblockIban1[18] = { 0 };    // Initialize with zeros and allow space for null termination
+char readblockIban2[18] = { 0 };    // Initialize with zeros and allow space for null termination
 char maskedblockIban2[18] = { 0 };  // Initialize with zeros and allow space for null termination
 
 byte buffer = 18;
@@ -68,7 +68,8 @@ Keypad keypad = Keypad(makeKeymap(keys), pin_rows, pin_column, ROW_NUM, COLUMN_N
 String code = "";  // Initialize code
 
 struct AccountInfo {
-  String name;
+  String firstname;
+  String lastname;
   float balance;
 };
 
@@ -131,9 +132,9 @@ void bonprinter(String content, float amount, String iban, int transactionTime, 
   printer.println(time);
   printer.feed(5);
 
-  printer.sleep();      // Tell printer to sleep
-  delay(3000L);         // Sleep for 3 seconds
-  printer.wake();       // MUST wake() before printing again, even if reset
+  printer.sleep();  // Tell printer to sleep
+  delay(3000L);     // Sleep for 3 seconds
+  printer.wake();   // MUST wake() before printing again, even if reset
   printer.setDefault();
 }
 
@@ -164,8 +165,9 @@ void setup() {
 
   mfrc522.PCD_Init();  // Init MFRC522
   //mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
-  
-  pinMode(4, OUTPUT); digitalWrite(4, LOW);
+
+  pinMode(4, OUTPUT);
+  digitalWrite(4, LOW);
   mySerial.begin(9600);
   printer.begin();
 
@@ -173,7 +175,7 @@ void setup() {
 }
 
 void loop() {
-  while(1){
+  while (1) {
     for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
 
     // Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
@@ -197,6 +199,26 @@ void loop() {
       content.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " "));
       content.concat(String(mfrc522.uid.uidByte[i], HEX));
     }
+
+    String stringWithSpaces = content;
+    String contentWithoutSpaces = "";
+
+    for (int i = 0; i < stringWithSpaces.length(); i++)
+      if (stringWithSpaces.charAt(i) != ' ') contentWithoutSpaces += stringWithSpaces.charAt(i);
+    content = contentWithoutSpaces;
+    String result = "";
+    for (int i = 0; i < content.length(); i++) {
+      char c = content[i];
+      if (isAlpha(c)) {
+        if (c >= 'a' && c <= 'z') {
+          c -= 32;  // Convert lowercase to uppercase by subtracting 32 (ASCII difference)
+        }
+        result += c;
+      } else {
+        result += c;
+      }
+    }
+    content = result;
 
     Serial.println();
 
@@ -286,7 +308,7 @@ void readDataFromBlock1(int block, char readBlockData[]) {
   }
 
   // Ensure null termination
-  readBlockData[16] = '\0';
+  readBlockData[8] = '\0';
 }
 
 void readDataFromBlock2(int block, char readBlockData[]) {
@@ -311,7 +333,7 @@ void readDataFromBlock2(int block, char readBlockData[]) {
   }
 
   // Ensure null termination
-  readBlockData[16] = '\0';
+  readBlockData[10] = '\0';
 }
 
 void maskedDataFromBlock2(int block, char readBlockData[]) {
@@ -372,15 +394,18 @@ AccountInfo sendInfoRequestToAPI(String iban, String pincode, String pasnummer, 
     deserializeJson(doc, http.getString());
 
     // Haal de gegevens uit de JSON-response
-    accountInfo.name = doc["name"].as<String>();
+    accountInfo.firstname = doc["firstname"].as<String>();
+    accountInfo.lastname = doc["lastname"].as<String>();
     accountInfo.balance = doc["balance"].as<float>();
 
     Serial.println("HTTP Response code: ");
     Serial.println(httpResponseCode);
 
     // Toon de ontvangen gegevens
-    Serial.print("Naam: ");
-    Serial.println(accountInfo.name);
+    Serial.print("Voornaam: ");
+    Serial.println(accountInfo.firstname);
+    Serial.print("Achternaam: ");
+    Serial.println(accountInfo.lastname);
     Serial.print("Saldo: ");
     Serial.println(accountInfo.balance);
   } else {
@@ -417,7 +442,7 @@ Withdraw withdrawFromAccount(String iban, String pincode, String pasnummer, int 
     DynamicJsonDocument doc(1024);
     deserializeJson(doc, http.getString());
 
-    withdraw.amount = doc["amount"].as<float>();  
+    withdraw.amount = doc["amount"].as<float>();
 
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
@@ -495,8 +520,7 @@ String adjustTime(String currentTime, long adjustment) {
   }
 
   // Formatteer de tijd terug naar een string
-  String adjustedTime = String(year) + "-" + formatTimeElement(month) + "-" + formatTimeElement(day) + " " +
-                        formatTimeElement(hour) + ":" + formatTimeElement(minute) + ":" + formatTimeElement(second);
+  String adjustedTime = String(year) + "-" + formatTimeElement(month) + "-" + formatTimeElement(day) + " " + formatTimeElement(hour) + ":" + formatTimeElement(minute) + ":" + formatTimeElement(second);
   return adjustedTime;
 }
 
