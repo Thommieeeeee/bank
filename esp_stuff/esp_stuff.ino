@@ -449,6 +449,13 @@ Withdraw withdrawFromAccount(String iban, String pincode, String pasnummer, int 
 
     Serial.print("Bedrag: ");
     Serial.println(withdraw.amount);
+
+    moneyDispenser()
+    Serial.print("Even geduld aub...")
+    if (ready == 1){
+      Serial.print("Bedankt voor het pinnen :)")
+    }
+    
   } else {
     Serial.print("HTTP Request failed with error code: ");
     Serial.println(httpResponseCode);
@@ -558,12 +565,15 @@ void loginToServer(String clientId, String pin, String token) {
   http.end();
 }
 
-void moneyDispenser(...) {
+int XX = 0;
+int V = 0;
+int ready = 0;
+
+void moneyDispenser() {
 while (Serial.available() == 0) {
     delay(10);  // wait for 10ms
   }
-
-  amount = Serial.parseInt();
+  
   Serial.println(amount);
   while (amount > 0) {
     if (amount >= 20) {
@@ -584,5 +594,6 @@ while (Serial.available() == 0) {
       digitalWrite(motorPin1, LOW);
       digitalWrite(motorPin2, LOW);
     }
+    int ready = 1;
   }
 }
