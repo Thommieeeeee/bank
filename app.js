@@ -48,7 +48,6 @@ function startServer() {
     });
 
     app.post('/api/accountinfo', cors(), (req, res) => {
-        console.log('help');
         const { target } = req.query;
         const { pincode, uid } = req.body;
         const token = req.header('NOOB-TOKEN');
@@ -58,7 +57,7 @@ function startServer() {
         // Controleren of alle parameters zijn meegegeven
         if (target.match(/^ZW\d{2}BANB\d{10}/)) {
             // Als alle parameters aanwezig zijn, stuur een JSON-reactie met de gebruikersgegevens
-            const query = 'SELECT name, balance FROM clients WHERE client_id = ? AND pincode = ?';
+            const query = 'SELECT firstname, lastname, balance FROM clients WHERE client_id = ? AND pincode = ?';
             db.query(query, [target, pincode], (err, results) => {
                 if (err) {
                     console.error(`Database query error: ${err.message}`);
@@ -67,6 +66,7 @@ function startServer() {
                     res.status(404).json({ error: "Client not found or incorrect pincode" });
                 } else {
                     const userData = results[0];
+                    console.log(results[0]);
                     res.status(200).json(userData);
                 }
             });
@@ -101,14 +101,14 @@ function startServer() {
 
     app.post('/api/withdraw', cors(), (req, res) => {
         const { target } = req.query;
-        const { pincode, uid, amount } = req.body;
+        const { amount, pincode, uid } = req.body;
         const token = req.header('NOOB-TOKEN');
 
         // Controleer of alle parameters zijn meegegeven
         if (target.match(/^ZW\d{2}BANB\d{10}/)) {
             res.status(200).json({ amount }); // Retourneer het opnamebedrag
         } else {
-            fetch("https://noob.datalabrotterdam.nl/api/noob/accountinfo" + '?target=' + target, {
+            fetch("https://noob.datalabrotterdam.nl/api/noob/withdraw" + '?target=' + target, {
                 method: "POST",
                 body: JSON.stringify(req.body),
                 headers: {
@@ -116,21 +116,28 @@ function startServer() {
                     "NOOB-TOKEN": "f022be6b-e8ba-4470-83d0-3269534f3b8b"
                 }
             })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    // Read the response body as json
-                    return response.json();
-                })
-                .then(data => {
-                    // Log the response body
-                    console.log(data);
-                    res.status(200).json(data);
-                })
-                .catch(error => {
-                    console.error('There was a problem with the fetch operation:', error);
-                });
+            .then(response => {
+                // Check if response was successful
+                if (response.ok) {
+                    // Log the response body if needed
+                    console.log("Request successful");
+                    // Return status code
+                    return response.status;
+                } else {
+                    // Log the full error message for debugging
+                    console.error('Network response was not ok:', response.status);
+                    throw new Error('Network response was not ok');
+                }
+            })
+            .then(status => {
+                // Send the status code as response
+                res.status(status).send();
+            })
+            .catch(error => {
+                console.error('There was a problem with the fetch operation:', error);
+                // Handle error response
+                res.status(500).json({ error: 'Internal Server Error' });
+            });
         }
     });
 
