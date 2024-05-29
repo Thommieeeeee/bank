@@ -558,23 +558,31 @@ void loginToServer(String clientId, String pin, String token) {
   http.end();
 }
 
-// void dispenseMoney(int amount) {
-//   int bills[2] = {20, 5};
-//   int num_bills = sizeof(bills) / sizeof(int);
+void moneyDispenser(...) {
+while (Serial.available() == 0) {
+    delay(10);  // wait for 10ms
+  }
 
-//   for (int i = 0; i < num_bills; i++) {
-//     int bill = bills[i];
-//     int num_steps = amount / bill;
-//     amount %= bill;
-
-//     for (int j = 0; j < num_steps; j++) {
-//       if (bill == 5) {
-//         stepper5.step(stepsPerRevolution);
-//         delay(100);
-//       } else if (bill == 20) {
-//         stepper20.step(stepsPerRevolution);
-//         delay(100);
-//       }
-//     }
-//   }
-// }
+  amount = Serial.parseInt();
+  Serial.println(amount);
+  while (amount > 0) {
+    if (amount >= 20) {
+      digitalWrite(motorPin1, HIGH);
+      digitalWrite(motorPin2, LOW);
+      amount -= 20;
+      XX += 1;
+      Serial.println(amount);
+      delay(1000);
+    } else if (amount < 20 && amount >= 5) {
+      digitalWrite(motorPin1, LOW);
+      digitalWrite(motorPin2, HIGH);
+      amount -= 5;
+      V += 1;
+      Serial.println(amount);
+      delay(1000);
+    } else if (amount >= 0 && amount < 5) {
+      digitalWrite(motorPin1, LOW);
+      digitalWrite(motorPin2, LOW);
+    }
+  }
+}
