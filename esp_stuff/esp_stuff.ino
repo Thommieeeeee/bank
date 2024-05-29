@@ -65,7 +65,7 @@ byte pin_column[COLUMN_NUM] = { 26, 25, 33, 32 };
 
 Keypad keypad = Keypad(makeKeymap(keys), pin_rows, pin_column, ROW_NUM, COLUMN_NUM);
 
-String code = "";  // Initialize code
+String pincode = "";  // Initialize code
 
 struct AccountInfo {
   String firstname;
@@ -78,7 +78,7 @@ struct Withdraw {
 };
 
 void bonprinter(String content, float amount, String iban, int transactionTime, String time) {
-  printer.setTimes(100, 5);
+  printer.setTimes(100, 10);
   printer.justify('C');
   printer.setSize('L');
   printer.println("    BANK OF    ");
@@ -223,14 +223,8 @@ void loop() {
     Serial.println();
 
     readDataFromBlock1(block, readblockIban1);
-    Serial.println(block);
-    Serial.println(readblockIban1);
     maskedDataFromBlock2(block2, maskedblockIban2);
-    Serial.println(block2);
-    Serial.println(maskedblockIban2);
-
     readDataFromBlock2(block2, readblockIban2);
-    Serial.println(readblockIban2);
 
     String iban = String(readblockIban1) + String(readblockIban2);
     String maskedIban = String(readblockIban1) + String(maskedblockIban2);
@@ -238,45 +232,92 @@ void loop() {
     Serial.println();
     Serial.println("Voer pincode in: ");
 
-    char key;
+    static String input = "";  // Houdt de cumulatieve invoer bij
 
-    //Blijf wachten totdat er een viercijferige code is ingevoerd
-    while (code.length() < 4) {
-      key = keypad.getKey();
-      if (key != NO_KEY && key >= '0' && key <= '9') {
-        code += key;
-        Serial.print(key);
+    while (true) {
+      char key = keypad.getKey();
+      if (key) {
+        if (key == '#') {
+          pincode = input.toInt();
+          if (pincode.length() == 4) {
+            Serial.println();
+            AccountInfo accountInfo = sendInfoRequestToAPI(iban, pincode, content, noobToken);  // Stuur IBAN, pincode en pasnummer naar de API
+            input = "";
+            break;
+          } else {
+            Serial.println("Ongeldige invoer. Voer een geldige pincode in.");
+          }
+        } else if (key == '*') {  // '*' wordt gebruikt om de invoer te annuleren
+          input = "";             // Reset de invoer
+          Serial.println("Invoer geannuleerd.");
+        } else {
+          input += key;
+          Serial.print(key);
+        }
       }
     }
 
-    Serial.println();
+    Serial.println(input);
 
-    AccountInfo accountInfo = sendInfoRequestToAPI(iban, code, content, noobToken);  // Stuur IBAN, pincode en pasnummer naar de API
+    int amount;
 
     //loginToServer(iban, code, noobToken);
 
-    code = "";
     Serial.println("Wil je geld opnemen? Druk op 1 voor ja en op 2 voor nee");
-    while (code.length() < 1) {
-      key = keypad.getKey();
-      if (key != NO_KEY && key >= '0' && key <= '9') {
-        code += key;
-        Serial.print(key);
+    while (true) {
+      char key = keypad.getKey();
+      if (key) {
+        if (key == '1') {
+          Serial.println("Hoeveel wilt u opnemen?");
+          while (true) {
+            key = keypad.getKey();
+            if (key) {
+              if (key == '#') {              // '#' wordt gebruikt om de invoer te voltooien
+                amount = input.toInt();  // Converteer de invoer naar een geheel getal
+                if (amount > 0) {            // Controleer of het bedrag geldig is
+                  Serial.println();
+                  Withdraw withdraw = withdrawFromAccount(iban, pincode, content, amount, noobToken);
+                  transactionTimes++;
+                } else {
+                  Serial.println("Ongeldige invoer. Voer een geldig bedrag in.");
+                }
+                input = "";  // Reset de invoer na voltooiing
+                break;
+              } else if (key == '*') {  // '*' wordt gebruikt om de invoer te annuleren
+                input = "";             // Reset de invoer
+                Serial.println("Invoer geannuleerd.");
+              } else {  // Anders, voeg de toets toe aan de invoer
+                input += key;
+                Serial.print(key);  // Optioneel: print de ingedrukte toets naar de seriële monitor
+              }
+            }
+          }
+          break;
+        } else if (key == '2') {
+          Serial.println("\nOke");
+          break;
+        } else {
+          Serial.println("\nVerkeerde input");
+        }
       }
     }
 
-    if (code == "1") {
-      int amount = 10;
-      Serial.println();
-      Withdraw withdraw = withdrawFromAccount(iban, code, content, amount, noobToken);
-      transactionTimes++;
-      bonprinter(content, withdraw.amount, maskedIban, transactionTimes, getCurrentTimeFromServer());
-    } else if (code == "2") {
-      Serial.println("\nOke");
-    } else {
-      Serial.println("\nVerkeerde input");
+    Serial.println("Wilt u een bon? Druk op 1 voor ja en 2 voor nee");
+    while (true) {
+      char key = keypad.getKey();
+      if (key) {
+        if (key == '1') {
+          Serial.println("Bon wordt geprind.");
+          bonprinter(content, amount, maskedIban, transactionTimes, getCurrentTimeFromServer());
+          break;
+        } else if (key == '2') {
+          Serial.println("\nOke");
+          break;
+        } else {
+          Serial.println("\nVerkeerde input");
+        }
+      }
     }
-    code = "";
 
     delay(3000);
     Serial.println("Houdt uw pas tegen de lezer.");
@@ -425,8 +466,15 @@ Withdraw withdrawFromAccount(String iban, String pincode, String pasnummer, int 
   // De URL van de API waar je het verzoek naartoe stuurt
   String apiUrl = "http://145.24.223.83:8080/api/withdraw?target=" + iban;
 
-  // Maak een JSON-payload met de IBAN, pincode en pasnummer
-  String payload = "{\"pincode\":\"" + pincode + "\",\"uid\":\"" + pasnummer + "\",\"amount\":\"" + String(amount) + "\"}";
+  // Maak een JSON-object en voeg de velden toe
+  DynamicJsonDocument payload(200);
+  payload["amount"] = amount;
+  payload["pincode"] = pincode;
+  payload["uid"] = pasnummer;
+
+  // Maak een string van het JSON-object
+  String jsonString;
+  serializeJson(payload, jsonString);
 
   // Begin met het configureren van de HTTP-client
   http.begin(apiUrl);
@@ -434,21 +482,13 @@ Withdraw withdrawFromAccount(String iban, String pincode, String pasnummer, int 
   http.addHeader("NOOB-TOKEN", token);
 
   // Voer het POST-verzoek uit met de JSON-payload
-  int httpResponseCode = http.POST(payload);
+  int httpResponseCode = http.POST(jsonString);
 
   // Controleer of het verzoek succesvol was
   if (httpResponseCode == 200) {
     // Parse de ontvangen JSON-response
     DynamicJsonDocument doc(1024);
     deserializeJson(doc, http.getString());
-
-    withdraw.amount = doc["amount"].as<float>();
-
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-
-    Serial.print("Bedrag: ");
-    Serial.println(withdraw.amount);
   } else {
     Serial.print("HTTP Request failed with error code: ");
     Serial.println(httpResponseCode);
@@ -483,13 +523,6 @@ String getCurrentTimeFromServer() {
     currentTime = doc["currentTime"].as<String>();
 
     currentTime = adjustTime(currentTime, 7200);
-
-    Serial.println("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-
-    // Toon de ontvangen tijd
-    Serial.print("Huidige tijd: ");
-    Serial.println(currentTime);
   } else {
     Serial.print("HTTP Request failed with error code: ");
     Serial.println(httpResponseCode);
@@ -557,24 +590,3 @@ void loginToServer(String clientId, String pin, String token) {
   // Free resources
   http.end();
 }
-
-// void dispenseMoney(int amount) {
-//   int bills[2] = {20, 5};
-//   int num_bills = sizeof(bills) / sizeof(int);
-
-//   for (int i = 0; i < num_bills; i++) {
-//     int bill = bills[i];
-//     int num_steps = amount / bill;
-//     amount %= bill;
-
-//     for (int j = 0; j < num_steps; j++) {
-//       if (bill == 5) {
-//         stepper5.step(stepsPerRevolution);
-//         delay(100);
-//       } else if (bill == 20) {
-//         stepper20.step(stepsPerRevolution);
-//         delay(100);
-//       }
-//     }
-//   }
-// }
