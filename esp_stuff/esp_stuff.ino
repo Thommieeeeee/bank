@@ -22,7 +22,6 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
-#include <Stepper.h>
 
 #define RST_PIN 15  // Configurable, see typical pin layout above
 #define SS_PIN 5    // Configurable, see typical pin layout above
@@ -75,6 +74,7 @@ struct AccountInfo {
 
 struct Withdraw {
   float amount;
+  int httpResponseCode;
 };
 
 void bonprinter(String content, float amount, String iban, int transactionTime, String time) {
@@ -272,12 +272,11 @@ void loop() {
           while (true) {
             key = keypad.getKey();
             if (key) {
-              if (key == '#') {              // '#' wordt gebruikt om de invoer te voltooien
+              if (key == '#') {          // '#' wordt gebruikt om de invoer te voltooien
                 amount = input.toInt();  // Converteer de invoer naar een geheel getal
-                if (amount > 0) {            // Controleer of het bedrag geldig is
+                if (amount > 0) {        // Controleer of het bedrag geldig is
                   Serial.println();
                   Withdraw withdraw = withdrawFromAccount(iban, pincode, content, amount, noobToken);
-                  transactionTimes++;
                 } else {
                   Serial.println("Ongeldige invoer. Voer een geldig bedrag in.");
                 }
@@ -482,16 +481,16 @@ Withdraw withdrawFromAccount(String iban, String pincode, String pasnummer, int 
   http.addHeader("NOOB-TOKEN", token);
 
   // Voer het POST-verzoek uit met de JSON-payload
-  int httpResponseCode = http.POST(jsonString);
+  withdraw.httpResponseCode = http.POST(jsonString);
 
   // Controleer of het verzoek succesvol was
-  if (httpResponseCode == 200) {
+  if (withdraw.httpResponseCode == 200) {
     // Parse de ontvangen JSON-response
     DynamicJsonDocument doc(1024);
     deserializeJson(doc, http.getString());
   } else {
     Serial.print("HTTP Request failed with error code: ");
-    Serial.println(httpResponseCode);
+    Serial.println(withdraw.httpResponseCode);
   }
 
   // Beëindig het HTTP-verzoek
