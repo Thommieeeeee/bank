@@ -22,12 +22,16 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include <WebSocketsClient.h>
 
 #define RST_PIN 15  // Configurable, see typical pin layout above
 #define SS_PIN 5    // Configurable, see typical pin layout above
 
 #define TX_PIN 16  // Arduino transmit  YELLOW WIRE  labeled RX on printer
 #define RX_PIN 17  // Arduino receive   GREEN WIRE   labeled TX on printer
+
+#define motorPin1 21
+#define motorPin2 22
 
 SoftwareSerial mySerial(RX_PIN, TX_PIN);  // Declare SoftwareSerial obj first
 Adafruit_Thermal printer(&mySerial);
@@ -49,6 +53,8 @@ int transactionTimes = 0;
 
 String noobToken = "f022be6b-e8ba-4470-83d0-3269534f3b8b";
 
+WebSocketsClient webSocket;
+
 #define ROW_NUM 4     // four rows
 #define COLUMN_NUM 4  // four columns
 
@@ -65,6 +71,10 @@ byte pin_column[COLUMN_NUM] = { 26, 25, 33, 32 };
 Keypad keypad = Keypad(makeKeymap(keys), pin_rows, pin_column, ROW_NUM, COLUMN_NUM);
 
 String pincode = "";  // Initialize code
+
+int XX = 0;
+int V = 0;
+int ready = 0;
 
 struct AccountInfo {
   String firstname;
@@ -141,7 +151,6 @@ void bonprinter(String content, float amount, String iban, int transactionTime, 
 void initWifi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin("tesla iot", "fsL6HgjN");
-  //WiFi.begin("FRITZ!Box gast", "martine20101977");
   Serial.println("\nConnecting");
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -163,6 +172,10 @@ void setup() {
 
   initWifi();  //Initialize wifi function
 
+  // WebSocket Client instellen
+  webSocket.begin("145.24.223.83", 8080, "/");  // Vervang door je serveradres en poort
+  webSocket.onEvent(webSocketEvent);
+
   mfrc522.PCD_Init();  // Init MFRC522
   //mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
 
@@ -171,10 +184,15 @@ void setup() {
   mySerial.begin(9600);
   printer.begin();
 
+  pinMode(motorPin1, OUTPUT);
+  pinMode(motorPin2, OUTPUT);
+
   Serial.println("Houdt uw pas tegen de lezer.");
 }
 
 void loop() {
+  webSocket.loop();
+
   while (1) {
     for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
 
@@ -229,6 +247,8 @@ void loop() {
     String iban = String(readblockIban1) + String(readblockIban2);
     String maskedIban = String(readblockIban1) + String(maskedblockIban2);
 
+    webSocket.sendTXT("Pas gescand");
+
     Serial.println();
     Serial.println("Voer pincode in: ");
 
@@ -238,21 +258,28 @@ void loop() {
       char key = keypad.getKey();
       if (key) {
         if (key == '#') {
-          pincode = input.toInt();
-          if (pincode.length() == 4) {
-            Serial.println();
-            AccountInfo accountInfo = sendInfoRequestToAPI(iban, pincode, content, noobToken);  // Stuur IBAN, pincode en pasnummer naar de API
+          if (input.length() == 4) {
+            pincode = input;
+            Serial.println("Pincode is: " + pincode);
+            webSocket.sendTXT("Pincode ingevoerd: " + pincode);  // Verstuur pincode via WebSocket
             input = "";
             break;
           } else {
             Serial.println("Ongeldige invoer. Voer een geldige pincode in.");
+            webSocket.sendTXT("Ongeldige pincode. Voer opnieuw in.");
           }
-        } else if (key == '*') {  // '*' wordt gebruikt om de invoer te annuleren
-          input = "";             // Reset de invoer
+        } else if (key == '*') {
+          input = "";  // Reset de invoer
           Serial.println("Invoer geannuleerd.");
+          webSocket.sendTXT("Invoer geannuleerd.");
         } else {
-          input += key;
-          Serial.print(key);
+          if (input.length() < 4) {
+            input += key;
+            Serial.print(key);
+            webSocket.sendTXT(input);  // Verstuur de ingevoerde cijfers via WebSocket
+          } else {
+            Serial.println("Maximaal 4 cijfers. Druk op '#' om te bevestigen.");
+          }
         }
       }
     }
@@ -260,6 +287,7 @@ void loop() {
     Serial.println(input);
 
     int amount;
+    int flag = 0;
 
     //loginToServer(iban, code, noobToken);
 
@@ -277,6 +305,9 @@ void loop() {
                 if (amount > 0) {        // Controleer of het bedrag geldig is
                   Serial.println();
                   Withdraw withdraw = withdrawFromAccount(iban, pincode, content, amount, noobToken);
+                  if (withdraw.httpResponseCode == 200) {
+                    moneyDispenser(amount);
+                  }
                 } else {
                   Serial.println("Ongeldige invoer. Voer een geldig bedrag in.");
                 }
@@ -299,21 +330,24 @@ void loop() {
           Serial.println("\nVerkeerde input");
         }
       }
+      flag++;
     }
 
-    Serial.println("Wilt u een bon? Druk op 1 voor ja en 2 voor nee");
-    while (true) {
-      char key = keypad.getKey();
-      if (key) {
-        if (key == '1') {
-          Serial.println("Bon wordt geprind.");
-          bonprinter(content, amount, maskedIban, transactionTimes, getCurrentTimeFromServer());
-          break;
-        } else if (key == '2') {
-          Serial.println("\nOke");
-          break;
-        } else {
-          Serial.println("\nVerkeerde input");
+    if (ready == 1) {
+      Serial.println("Wilt u een bon? Druk op 1 voor ja en 2 voor nee");
+      while (true) {
+        char key = keypad.getKey();
+        if (key) {
+          if (key == '1') {
+            Serial.println("Bon wordt geprind.");
+            bonprinter(content, amount, maskedIban, transactionTimes, getCurrentTimeFromServer());
+            break;
+          } else if (key == '2') {
+            Serial.println("\nOke");
+            break;
+          } else {
+            Serial.println("\nVerkeerde input");
+          }
         }
       }
     }
@@ -323,6 +357,21 @@ void loop() {
 
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
+  }
+}
+
+void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
+  switch (type) {
+    case WStype_DISCONNECTED:
+      Serial.println("WebSocket verbroken");
+      break;
+    case WStype_CONNECTED:
+      Serial.println("WebSocket verbonden");
+      break;
+    case WStype_TEXT:
+      Serial.printf("Bericht ontvangen: %s\n", payload);
+      break;
+      // Andere gevallen zoals binaire berichten, pingen etc.
   }
 }
 
@@ -416,8 +465,14 @@ AccountInfo sendInfoRequestToAPI(String iban, String pincode, String pasnummer, 
   // De URL van de API waar je het verzoek naartoe stuurt
   String apiUrl = "http://145.24.223.83:8080/api/accountinfo?target=" + iban;
 
-  // Maak een JSON-payload met de IBAN, pincode en pasnummer
-  String payload = "{\"pincode\":\"" + pincode + "\",\"uid\":\"" + pasnummer + "\"}";
+  // Maak een JSON-object en voeg de velden toe
+  DynamicJsonDocument payload(200);
+  payload["pincode"] = pincode;
+  payload["uid"] = pasnummer;
+
+  // Maak een string van het JSON-object
+  String jsonString;
+  serializeJson(payload, jsonString);
 
   // Begin met het configureren van de HTTP-client
   http.begin(apiUrl);
@@ -425,7 +480,7 @@ AccountInfo sendInfoRequestToAPI(String iban, String pincode, String pasnummer, 
   http.addHeader("NOOB-TOKEN", token);
 
   // Voer het POST-verzoek uit met de JSON-payload
-  int httpResponseCode = http.POST(payload);
+  int httpResponseCode = http.POST(jsonString);
 
   // Controleer of het verzoek succesvol was
   if (httpResponseCode == 200) {
@@ -437,6 +492,20 @@ AccountInfo sendInfoRequestToAPI(String iban, String pincode, String pasnummer, 
     accountInfo.firstname = doc["firstname"].as<String>();
     accountInfo.lastname = doc["lastname"].as<String>();
     accountInfo.balance = doc["balance"].as<float>();
+
+    DynamicJsonDocument jsonDoc(1024);  // JSON-document maken
+
+    // Gegevens toevoegen aan het JSON-document
+    jsonDoc["message"] = "Inloggen success";
+    jsonDoc["firstname"] = accountInfo.firstname;
+    jsonDoc["balance"] = accountInfo.balance;
+
+    // JSON-bericht omzetten naar een string
+    String jsonString;
+    serializeJson(jsonDoc, jsonString);
+
+    // Verstuur het JSON-bericht via WebSocket
+    webSocket.sendTXT(jsonString);
 
     Serial.println("HTTP Response code: ");
     Serial.println(httpResponseCode);
@@ -561,31 +630,32 @@ String formatTimeElement(int element) {
   return (element < 10 ? "0" + String(element) : String(element));
 }
 
-void loginToServer(String clientId, String pin, String token) {
-  HTTPClient http;
-
-  // De URL van de API waar je het verzoek naartoe stuurt
-  String apiUrl = "http://bankofvenezuela/client_id_page.html";
-
-  // Maak een JSON-payload met de IBAN, pincode en pasnummer
-  String payload = "{\"client_id\":\"" + clientId + "\",\"pin\":\"" + pin + "\"}";
-
-  // Begin met het configureren van de HTTP-client
-  http.begin(apiUrl);
-  http.addHeader("Content-Type", "application/json");
-
-  // Voer het POST-verzoek uit met de JSON-payload
-  int httpResponseCode = http.POST(payload);
-
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.println(httpResponseCode);
-    Serial.println(response);
-  } else {
-    Serial.print("Error on sending POST: ");
-    Serial.println(httpResponseCode);
+void moneyDispenser(int amount) {
+  Serial.println(amount);
+  while (amount >= 0) {
+    if (amount >= 20) {
+      digitalWrite(motorPin1, HIGH);
+      digitalWrite(motorPin2, LOW);
+      amount -= 20;
+      XX += 1;
+      Serial.println(amount);
+      delay(1000);
+    } else if (amount < 20 && amount >= 5) {
+      digitalWrite(motorPin1, LOW);
+      digitalWrite(motorPin2, HIGH);
+      amount -= 5;
+      V += 1;
+      Serial.println(amount);
+      delay(1000);
+    } else {
+      // Geen geld meer uit te geven, stop de motoren
+      digitalWrite(motorPin1, LOW);
+      digitalWrite(motorPin2, LOW);
+      break;  // Breek de loop als het bedrag kleiner is dan 5
+    }
   }
-
-  // Free resources
-  http.end();
+  // Zet de motoren uit na het beëindigen van de loop
+  digitalWrite(motorPin1, LOW);
+  digitalWrite(motorPin2, LOW);
+  ready = 1;  // Geef aan dat het proces klaar is
 }
