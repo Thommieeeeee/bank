@@ -2,19 +2,37 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require('body-parser');
 const mysql = require('mysql2');
+const http = require('http');
+const WebSocket = require('ws');
+const path = require('path');
 
 const app = express();
 
 const port = 8080;
 
+// Stel Express in om de website directory te serveren
+const publicPath = path.resolve(__dirname, '..', '..', 'website');
+
 app.use(express.json());
 app.use(cors());
 app.use(bodyParser.json());
+app.use(express.static(publicPath));
 
 let db;
 const maxRetries = 10;
 const retryDelay = 5000;
 let retryCount = 0;
+
+// Voeg een GET-route toe voor de root URL
+app.get('/', (req, res) => {
+    res.sendFile(path.join(publicPath, 'tempindex.html'));
+});
+
+// Maak een HTTP-server
+const server = http.createServer(app);
+
+// Maak een WebSocket-server
+const wss = new WebSocket.Server({ server });
 
 function connectToDatabase() {
     db = mysql.createConnection({
@@ -66,7 +84,14 @@ function startServer() {
                     res.status(404).json({ error: "Client not found or incorrect pincode" });
                 } else {
                     const userData = results[0];
-                    console.log(results[0]);
+
+                    // Check if the balance field exists and is a string
+                    if (userData.balance && typeof userData.balance === 'string') {
+                        // Parse the balance field to an integer
+                        userData.balance = parseInt(userData.balance, 10);
+                    }
+
+                    console.log(userData);
                     res.status(200).json(userData);
                 }
             });
@@ -116,28 +141,28 @@ function startServer() {
                     "NOOB-TOKEN": "f022be6b-e8ba-4470-83d0-3269534f3b8b"
                 }
             })
-            .then(response => {
-                // Check if response was successful
-                if (response.ok) {
-                    // Log the response body if needed
-                    console.log("Request successful");
-                    // Return status code
-                    return response.status;
-                } else {
-                    // Log the full error message for debugging
-                    console.error('Network response was not ok:', response.status);
-                    throw new Error('Network response was not ok');
-                }
-            })
-            .then(status => {
-                // Send the status code as response
-                res.status(status).send();
-            })
-            .catch(error => {
-                console.error('There was a problem with the fetch operation:', error);
-                // Handle error response
-                res.status(500).json({ error: 'Internal Server Error' });
-            });
+                .then(response => {
+                    // Check if response was successful
+                    if (response.ok) {
+                        // Log the response body if needed
+                        console.log("Request successful");
+                        // Return status code
+                        return response.status;
+                    } else {
+                        // Log the full error message for debugging
+                        console.error('Network response was not ok:', response.status);
+                        throw new Error('Network response was not ok');
+                    }
+                })
+                .then(status => {
+                    // Send the status code as response
+                    res.status(status).send();
+                })
+                .catch(error => {
+                    console.error('There was a problem with the fetch operation:', error);
+                    // Handle error response
+                    res.status(500).json({ error: 'Internal Server Error' });
+                });
         }
     });
 
@@ -154,9 +179,34 @@ function startServer() {
         });
     });
 
-    app.listen(port, "145.24.223.83", () => {
-        console.log(`Server draait!`);
-    });
+    // app.listen(port, "145.24.223.83", () => {
+    //     console.log(`Server draait!`);
+    // });
 };
+
+wss.on('connection', ws => {
+    console.log('Nieuwe client verbonden');
+
+    ws.on('message', message => {
+        console.log(`Ontvangen bericht: ${message}`);
+        // Stuur het ontvangen bericht door naar alle verbonden clients
+        wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(message);
+            }
+        });
+    });
+
+    ws.on('close', () => {
+        console.log('Client heeft verbinding verbroken');
+    });
+
+    ws.send('Welkom nieuwe client!');
+});
+
+// Laat de websocketserver luisteren op poort 8080
+server.listen(port, "145.24.223.83", () => {
+    console.log(`WebsocketServer draait!`);
+});
 
 connectToDatabase();
