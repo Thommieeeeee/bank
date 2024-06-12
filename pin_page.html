@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIN Entry</title>
+    <link rel="stylesheet" href="styles.css"> <!-- Linking the external CSS file -->
+    <style>
+        /* Additional styling specific to PIN Entry */
+        .pin-container {
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
+        .pin-button {
+            width: 50px;
+            height: 50px;
+            font-size: 20px;
+            margin: 5px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .pin-button:hover {
+            background-color: #f0f0f0;
+        }
+        #pin-display {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        /* Lock styles */
+        .lock {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .lock img {
+            width: 100px;
+            height: 100px;
+        }
+
+        .lock p {
+            font-size: 20px;
+            color: #ffd700; /* Gold */
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1 class="logo">Bank of Venezuela</h1>
+        </div>
+    </header>
+
+    <main>
+        <h1>PIN Entry</h1>
+        <div id="pin-display" class="container">PIN: </div>
+        <div class="pin-container container">
+            <button class="pin-button" onclick="appendPin(1)">1</button>
+            <button class="pin-button" onclick="appendPin(2)">2</button>
+            <button class="pin-button" onclick="appendPin(3)">3</button>
+        </div>
+        <div class="pin-container container">
+            <button class="pin-button" onclick="appendPin(4)">4</button>
+            <button class="pin-button" onclick="appendPin(5)">5</button>
+            <button class="pin-button" onclick="appendPin(6)">6</button>
+        </div>
+        <div class="pin-container container">
+            <button class="pin-button" onclick="appendPin(7)">7</button>
+            <button class="pin-button" onclick="appendPin(8)">8</button>
+            <button class="pin-button" onclick="appendPin(9)">9</button>
+        </div>
+        <div class="pin-container container">
+            <button class="pin-button" onclick="deleteLast()">DEL</button>
+            <button class="pin-button" onclick="appendPin(0)">0</button>
+            <button class="pin-button" onclick="submitPin()">OK</button>
+        </div>
+        <div class="lock" id="lockDiv" style="display: none;">
+            <img src="lock_icon.png" alt="Lock Icon">
+            <p>This account is locked. Please try again in <span id="lockTimer">3:00</span> minutes.</p>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            &copy; 2024 Bank of Venezuela. All rights reserved.
+        </div>
+    </footer>
+
+    <script>
+        let pin = '';
+        let failedAttempts = 0;
+        let lockoutTimer;
+
+        function appendPin(number) {
+            if (pin.length < 6) {
+                pin += number;
+                updateDisplay();
+            }
+        }
+
+        function deleteLast() {
+            pin = pin.slice(0, -1);
+            updateDisplay();
+        }
+
+        function updateDisplay() {
+            document.getElementById('pin-display').textContent = 'PIN: ' + '*'.repeat(pin.length);
+        }
+
+        function submitPin() {
+            if (pin === '123456') { // Dummy PIN for demonstration
+                window.location.href = 'summary.html';
+            } else {
+                failedAttempts++;
+                if (failedAttempts >= 3) {
+                    document.getElementById('lockDiv').style.display = 'block'; // Show lockout message
+                    startLockoutTimer(); // Start lockout timer
+                }
+            }
+        }
+
+        // Function to start lockout timer
+        function startLockoutTimer() {
+            let duration = 180; // Lockout duration in seconds (3 minutes)
+            let timerDisplay = document.getElementById("lockTimer");
+
+            lockoutTimer = setInterval(function() {
+                let minutes = Math.floor(duration / 60);
+                let seconds = duration % 60;
+                timerDisplay.textContent = minutes.toString().padStart(2, '0') + ":" + seconds.toString().padStart(2, '0');
+
+                if (--duration < 0) {
+                    clearInterval(lockoutTimer); // Clear the timer when duration reaches 0
+                    document.getElementById("lockDiv").style.display = "none"; // Hide lockout message
+                    failedAttempts = 0; // Reset failed attempts counter
+                }
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
