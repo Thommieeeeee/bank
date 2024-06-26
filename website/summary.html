@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welkom</title>
+    <link rel="stylesheet" href="styles.css"> <!-- Linking the external CSS file -->
+    <style>
+        /* Additional styling specific to PIN Entry */
+        .pin-container {
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
+
+        .pin-button {
+            width: 50px;
+            height: 50px;
+            font-size: 20px;
+            margin: 5px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .pin-button:hover {
+            background-color: #f0f0f0;
+        }
+
+        #pin-display {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        /* New CSS styles for improved appearance */
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .summary-section {
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+            border: 2px solid #ffd700;
+            /* Yellow border for Summary section */
+            border-radius: 8px;
+            /* Rounded corners */
+        }
+
+        .summary-section p {
+            margin: 10px 0;
+        }
+
+        .withdraw-container {
+            margin-top: 20px;
+            border: 2px solid #ffd700;
+            /* Yellow border for Withdraw Money section */
+            padding: 20px;
+            /* Add padding for better alignment */
+            border-radius: 8px;
+            /* Rounded corners */
+        }
+
+        input[type="number"] {
+            width: 200px;
+            padding: 10px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #ffd700;
+            /* Yellow color */
+            color: #000;
+            /* Black text color */
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #e6bd00;
+            /* Darker yellow on hover */
+        }
+
+        .quick-pin-buttons {
+            margin-top: 10px;
+        }
+
+        .quick-pin-buttons button {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="container">
+            <h1 class="logo">Bank of Venezuela</h1>
+        </div>
+    </header>
+    <main>
+        <section class="summary-section">
+            <div class="container">
+                <h2 class="section-title"><strong>Welkom, </strong><span id="client_name"></span>!</h2>
+            </div>
+        </section>
+        <section>
+            <div class="container">
+                <h2 class="section-title">Kies een optie</h2>
+                <div class="button-container">
+                    <button onclick="goToBalancePage()">Balans</button>
+                    <button onclick="handleReturn()">Afbreken</button>
+                    <button onclick="goToWithdrawPage()">Geld opnemen</button>
+                    <button onclick="hideSections(); showWithdrawSection()">Snel pinnen</button>
+                </div>
+            </div>
+        </section>
+    </main>
+    <footer>
+        <div class="container">
+            &copy; 2024 Bank of Venezuela. All rights reserved.
+        </div>
+    </footer>
+
+    <script>
+        // Establish WebSocket connection
+        const ws = new WebSocket('ws://' + window.location.host);
+
+        ws.onopen = () => {
+            console.log('Verbonden met WebSocket server');
+            ws.send('Hallo van de client!');
+        };
+
+        ws.onmessage = (event) => {
+            console.log('Ontvangen bericht: ' + event.data);
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket verbinding gesloten');
+        };
+
+        // Verkrijg de gegevens van de URL
+        const queryString = window.location.search;
+        const urlParams = new URLSearchParams(queryString);
+        const firstname = urlParams.get('firstname');
+        const balance = urlParams.get('balance');
+
+        // Vind het element met id "client_name" en voeg de voornaam toe
+        const clientNameElement = document.getElementById('client_name');
+        clientNameElement.textContent = firstname;
+
+        function goToBalancePage() {
+            // Redirect naar de balance.html pagina met URL parameters
+            window.location.href = `balans.html?firstname=${firstname}&balance=${balance}`;
+        }
+
+        function goToWithdrawPage() {
+            // Redirect naar de withdraw.html pagina met URL parameters
+            window.location.href = `withdraw.html?firstname=${firstname}&balance=${balance}`;
+        }
+
+        function hideSections() {
+            document.querySelector('.withdraw-container').style.display = 'none';
+            document.querySelector('.quick-pin-buttons').style.display = 'none';
+        }
+
+        function handleReturn() {
+            // Send the message as a string explicitly
+            ws.send('Return');
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+
+</html>

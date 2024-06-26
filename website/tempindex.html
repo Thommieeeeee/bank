@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Client</title>
+</head>
+<body>
+    <h1>WebSocket Client</h1>
+    <div id="messages"></div>
+    <script>
+        const ws = new WebSocket('ws://' + window.location.host);
+
+        ws.onopen = () => {
+            console.log('Verbonden met WebSocket server');
+            ws.send('Hallo van de client!');
+        };
+
+        ws.onmessage = async (event) => {
+            const messagesDiv = document.getElementById('messages');
+            const message = document.createElement('p');
+
+            let text;
+            if (typeof event.data === 'string') {
+                text = event.data;
+            } else if (event.data instanceof Blob) {
+                text = await event.data.text();
+            } else {
+                text = 'Ontvangen bericht: onbekend type';
+            }
+
+            message.textContent = 'Ontvangen bericht: ' + text;
+            messagesDiv.appendChild(message);
+
+            // Redirect naar pagina2.html als een specifiek bericht wordt ontvangen
+            if (text === 'Ga naar pagina2') {
+                window.location.href = 'pagina2.html';
+            }
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket verbinding gesloten');
+        };
+    </script>
+</body>
+</html>

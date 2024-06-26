@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to Bank of Venezuela</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Additional styles for this page */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: #000;
+            /* Black text */
+            background-image: url('BOV.jpg');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+
+        header {
+            background-color: #ffd700;
+            /* Gold background */
+            color: #000;
+            /* Black text */
+            padding: 20px 0;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #000;
+            /* Black text */
+        }
+
+        .button-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 50px;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 20px 40px;
+            margin: 10px;
+            font-size: 20px;
+            border: 2px solid #ffd700;
+            /* Gold border */
+            border-radius: 5px;
+            background-color: #ffd700;
+            /* Gold background */
+            color: #000;
+            /* Black text */
+            text-decoration: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .button:hover {
+            background-color: #c0c0c0;
+            /* Light grey background on hover */
+        }
+
+        footer {
+            background-color: #ffd700;
+            /* Gold background */
+            color: #000;
+            /* Black text */
+            padding: 20px 0;
+            text-align: center;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+        }
+
+        .nfc-container {
+            background-color: #fff;
+            /* White background */
+            padding: 20px;
+            border: 2px solid #ffd700;
+            /* Gold border */
+            border-radius: 10px;
+            display: inline-block;
+            /* Ensures block display */
+            margin-top: 20px;
+        }
+
+        .nfc-logo-container p {
+            font-size: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="container">
+            <h1>Welcome to Bank of Venezuela</h1>
+        </div>
+    </header>
+    <main>
+        <div class="container">
+            <div class="nfc-container">
+                <div class="nfc-logo-container">
+                    <p>Scan PIN</p>
+                    <img src="nfc.png" alt="NFC Logo" style="width: 100px; height: auto;">
+                </div>
+            </div>
+        </div>
+    </main>
+    <footer>
+        <div class="container">
+            &copy; 2024 Bank of Venezuela. All rights reserved.
+        </div>
+    </footer>
+
+    <script>
+        const ws = new WebSocket('ws://' + window.location.host);
+
+        ws.onopen = () => {
+            console.log('Verbonden met WebSocket server');
+            ws.send('Hallo van de client!');
+        };
+
+        ws.onmessage = async (event) => {
+            const message = document.createElement('p');
+
+            let text;
+            if (typeof event.data === 'string') {
+                text = event.data;
+            } else if (event.data instanceof Blob) {
+                text = await event.data.text();
+            } else {
+                text = 'Ontvangen bericht: onbekend type';
+            }
+
+            message.textContent = 'Ontvangen bericht: ' + text;
+
+            // Redirect naar pagina2.html als een specifiek bericht wordt ontvangen
+            if (text === 'Pas gescand') {
+                window.location.href = 'passcanned.html';
+            }
+        };
+
+
+        ws.onclose = () => {
+            console.log('WebSocket verbinding gesloten');
+        };
+    </script>
+</body>
+
+</html>
