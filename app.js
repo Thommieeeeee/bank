@@ -23,6 +23,9 @@ const maxRetries = 10;
 const retryDelay = 5000;
 let retryCount = 0;
 
+let espClient = null;  // Variable to store the ESP client
+let webClient = null;
+
 // Voeg een GET-route toe voor de root URL
 app.get('/', (req, res) => {
     res.sendFile(path.join(publicPath, 'tempindex.html'));
@@ -188,21 +191,83 @@ wss.on('connection', ws => {
     console.log('Nieuwe client verbonden');
 
     ws.on('message', message => {
-        console.log(`Ontvangen bericht: ${message}`);
-        // Stuur het ontvangen bericht door naar alle verbonden clients
+        console.log(`Received message: ${message}`);
+
+        if (message == 'Hallo van de client!') {
+            webClient = ws;
+            console.log('Web client verbonden');
+            return;
+        }
+
+        if (message == 'ESP_CONNECTED') {
+            espClient = ws;
+            console.log('ESP client verbonden');
+            return;
+        }
+
+        if (message == 'Return') {
+            if (espClient) {
+                espClient.send('Return');
+                console.log('Return bericht naar ESP gestuurd');
+            } else {
+                console.log('Geen ESP client verbonden om het bericht te ontvangen');
+            }
+            return;
+        }
+
+        if (message == 'Bon') {
+            if (espClient) {
+                espClient.send('Bon');
+                console.log('Bon bericht naar ESP gestuurd');
+            } else {
+                console.log('Geen ESP client verbonden om het bericht te ontvangen');
+            }
+            return;
+        }
+
+        if (message == 'Geen bon') {
+            if (espClient) {
+                espClient.send('Geen bon');
+                console.log('Geen bon bericht naar ESP gestuurd');
+            } else {
+                console.log('Geen ESP client verbonden om het bericht te ontvangen');
+            }
+            return;
+        }
+
+        // Broadcast the message to all connected clients except the sender
         wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(message);
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+                // If the message is being sent to the espClient, ensure it's sent as a string
+                if (client == espClient) {
+                    try {
+                        const jsonMessage = JSON.stringify(JSON.parse(message)); // Ensure it's valid JSON and stringify it
+                        client.send(jsonMessage);
+                    } catch (e) {
+                        client.send(message); // If not JSON, send as is
+                    }
+                } else {
+                    client.send(message);
+                }
+                console.log('Bericht doorgestuurd naar clients');
             }
         });
     });
 
     ws.on('close', () => {
-        console.log('Client heeft verbinding verbroken');
+        if (ws == espClient) {
+            espClient = null;  // Reset the ESP client when it disconnects
+            console.log('ESP client heeft de verbinding verbroken');
+        }
+        if (ws == webClient) {
+            webClient = null;
+            console.log('Web client heeft de verbinding verbroken');
+        }
     });
 
     ws.send('Welkom nieuwe client!');
 });
+
 
 // Laat de websocketserver luisteren op poort 8080
 server.listen(port, "145.24.223.83", () => {
